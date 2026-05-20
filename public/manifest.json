@@ -1,0 +1,39 @@
+{
+  "name": "NutriAmigo Coach",
+  "short_name": "NutriAmigo",
+  "id": "/",
+  "start_url": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "minimal-ui"],
+  "background_color": "#ffffff",
+  "theme_color": "#059669",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "type": "image/png",
+      "sizes": "1024x1024"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "type": "image/png",
+      "sizes": "1024x1024"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-mobile.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "NutrIAmigo Dashboard"
+    },
+    {
+      "src": "/screenshot-desktop.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "NutrIAmigo Desktop Dashboard"
+    }
+  ],
+  "orientation": "portrait"
+}
