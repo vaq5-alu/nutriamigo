@@ -490,12 +490,9 @@ app.post('/api/ai/chat', authenticateUser, async (req, res) => {
         [{"action": "add_shopping", "items": ["manzanas"]}]
         `;
 
-        const model = genAI.getGenerativeModel({
-            model: "gemini-3.5-flash",
-            systemInstruction: {
-                parts: [{ text: systemPrompt }]
-            }
-        });
+        const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+        let result;
+        let lastError;
 
         // Gemini API EXIGE que el historial termine con 'model' y empiece con 'user' alternándose.
         // Recorremos el historial hacia atrás para extraer mensajes válidos alternados.
@@ -517,9 +514,27 @@ app.post('/api/ai/chat', authenticateUser, async (req, res) => {
             validHistory.shift();
         }
 
-        const chat = model.startChat({ history: validHistory });
+        for (const modelName of modelsToTry) {
+            try {
+                const model = genAI.getGenerativeModel({
+                    model: modelName,
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    }
+                });
+                const chat = model.startChat({ history: validHistory });
+                result = await chat.sendMessage(userMessage);
+                break; // Éxito: salimos del bucle
+            } catch (err) {
+                console.warn(`[GEMINI CHAT] Error con ${modelName}:`, err.message);
+                lastError = err;
+            }
+        }
 
-        const result = await chat.sendMessage(userMessage);
+        if (!result) {
+            throw lastError;
+        }
+
         const responseText = result.response.text();
         res.json({ responseText });
     } catch (error) {
@@ -549,7 +564,7 @@ app.post('/api/ai/menu', authenticateUser, async (req, res) => {
         - mealType: "desayuno", "comida", "snack" o "cena"
         - tags: Array de strings (ej. "alto en proteína")`;
 
-        const modelsToTry = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-flash-latest", "gemini-pro-latest"];
+        const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
         let result;
         let lastError;
 
