@@ -16,7 +16,7 @@ import PremiumScreen from './components/PremiumScreen.jsx';
 import { recipes } from './data/recipeDatabase.js';
 
 import VerificationPendingScreen from './components/VerificationPendingScreen.jsx';
-import { loginUser, registerUser, getTodayCheckin, getProfile, updateProfile, logoutUser, checkVerificationStatus, getDailyLog, addLogEntry, deleteLogEntry, deleteLogEntryByName, clearDailyLog, addShoppingItem, clearShoppingList, getShoppingList, replaceShoppingList, getWeightHistory, saveWeightEntry, deleteUserAccount, syncUserWithBackend, subscribeToPremium, cancelPremium, reactivatePremium, getStreak } from './services/api.js';
+import { loginUser, registerUser, getTodayCheckin, getProfile, updateProfile, logoutUser, checkVerificationStatus, getDailyLog, addLogEntry, deleteLogEntry, deleteLogEntryByName, clearDailyLog, getShoppingList, replaceShoppingList, getWeightHistory, saveWeightEntry, deleteUserAccount, syncUserWithBackend, subscribeToPremium, cancelPremium, reactivatePremium, getStreak } from './services/api.js';
 import { auth, onAuthStateChanged, sendPasswordResetEmail } from './firebaseConfig';
 
 const APP_NAME = "NutrIAmigo";
@@ -176,8 +176,9 @@ const parseAndNormalizeIngredient = (rawStr) => {
 };
 
 const formatIngredientDisplay = (name, qty, unit) => {
-  if (qty === null || qty === undefined) {
-    return name;
+  // Sin cantidad real (null, 0, NaN): mostrar solo el nombre, nunca "(x0)"
+  if (!qty || isNaN(qty)) {
+    return unit === 'al gusto' ? `${name} (al gusto)` : name;
   }
   if (unit === 'al gusto') {
     return `${name} (al gusto)`;
@@ -201,6 +202,10 @@ const formatIngredientDisplay = (name, qty, unit) => {
   }
   if (!displayUnit) {
     return `${name} (x${formattedQty})`;
+  }
+  // Unidades "palabra" (pizca, rebanada...) llevan espacio: "(1 pizca)", no "(1pizca)"
+  if (displayUnit.length > 2) {
+    return `${name} (${formattedQty} ${displayUnit})`;
   }
   return `${name} (${formattedQty}${displayUnit})`;
 };
@@ -470,32 +475,65 @@ export default function App() {
   };
 
 
-  const handleAddShoppingItem = async (itemName) => {
-    const parsedNew = parseAndNormalizeIngredient(itemName);
-    
+  // Única vía de modificación de la lista de la compra. Parte SIEMPRE del
+  // estado más reciente (ref síncrona): si el chat encadena varias acciones
+  // seguidas (ej. borrar peras y manzanas), cada una ve el resultado de la
+  // anterior en vez de calcular sobre una copia antigua y pisarse entre sí.
+  const shoppingListRef = useRef([]);
+  useEffect(() => { shoppingListRef.current = shoppingList; }, [shoppingList]);
+
+  const mutateShoppingList = async (updater) => {
+    const next = updater(shoppingListRef.current);
+    shoppingListRef.current = next;
+    setShoppingList(next);
+    await replaceShoppingList(next.map(item => item.name));
+  };
+
+  // Fusiona un ingrediente en una lista. Mismo nombre → misma línea:
+  // si ambas tienen cantidad comparable se suman; si alguna no tiene
+  // cantidad real ("al gusto", "una pizca", sin número) no se duplica,
+  // se conserva la versión más informativa.
+  const mergeIngredientIntoList = (list, ingredientStr) => {
+    const parsedNew = parseAndNormalizeIngredient(ingredientStr);
+    const hasQty = (p) => !!p.qty && !isNaN(p.qty) && p.unit && p.unit !== 'al gusto';
     let found = false;
-    let updatedList = shoppingList.map(item => {
+
+    const updatedList = list.map(item => {
+      if (found) return item;
       const parsedExisting = parseAndNormalizeIngredient(item.name);
-      if (parsedExisting.name.toLowerCase() === parsedNew.name.toLowerCase() &&
-          parsedExisting.unit === parsedNew.unit) {
-        
-        const totalQty = parsedExisting.qty + parsedNew.qty;
-        const newStr = formatIngredientDisplay(parsedExisting.name, totalQty, parsedExisting.unit);
+      if (parsedExisting.name.toLowerCase() !== parsedNew.name.toLowerCase()) return item;
+
+      // Cantidades comparables (misma unidad): sumar
+      if (hasQty(parsedExisting) && hasQty(parsedNew) && parsedExisting.unit === parsedNew.unit) {
         found = true;
-        return { ...item, name: newStr };
+        const totalQty = parsedExisting.qty + parsedNew.qty;
+        return { ...item, name: formatIngredientDisplay(parsedExisting.name, totalQty, parsedExisting.unit) };
       }
+
+      // Alguna de las dos sin cantidad real: misma línea, sin duplicar.
+      // Si la nueva aporta cantidad y la existente no, nos quedamos con la nueva.
+      if (!hasQty(parsedExisting) || !hasQty(parsedNew)) {
+        found = true;
+        if (!hasQty(parsedExisting) && hasQty(parsedNew)) {
+          return { ...item, name: formatIngredientDisplay(parsedNew.name, parsedNew.qty, parsedNew.unit) };
+        }
+        return item;
+      }
+
+      // Mismo nombre pero unidades distintas y ambas con cantidad (g vs ml): dejar separadas
       return item;
     });
-    
+
     if (!found) {
       const newStr = formatIngredientDisplay(parsedNew.name, parsedNew.qty, parsedNew.unit);
-      updatedList.push({ id: Date.now(), name: newStr });
+      updatedList.push({ id: Date.now() + Math.random(), name: newStr });
     }
-    
-    setShoppingList(updatedList);
+    return updatedList;
+  };
 
+  const handleAddShoppingItem = async (itemName) => {
     try {
-      await replaceShoppingList(updatedList.map(item => item.name));
+      await mutateShoppingList(list => mergeIngredientIntoList(list, itemName));
       handleAddXP(5);
     } catch (e) {
       console.error('Error al guardar item:', e);
@@ -504,28 +542,22 @@ export default function App() {
   };
 
   const handleDeleteShoppingItem = async (itemId) => {
-    const updatedList = shoppingList.filter(item => item.id !== itemId);
-    setShoppingList(updatedList);
-
     try {
-      await replaceShoppingList(updatedList.map(item => item.name));
+      await mutateShoppingList(list => list.filter(item => item.id !== itemId));
     } catch (e) {
       console.error('Error deleting item:', e);
     }
   };
 
   const handleDeleteShoppingItemByName = async (itemName) => {
-    const updatedList = shoppingList.filter(item => !item.name.toLowerCase().includes(itemName.toLowerCase()));
-    setShoppingList(updatedList);
     try {
-      await replaceShoppingList(updatedList.map(item => item.name));
+      await mutateShoppingList(list => list.filter(item => !item.name.toLowerCase().includes(itemName.toLowerCase())));
     } catch (e) { console.error('Error deleting item by name:', e); }
   };
 
   const handleClearShoppingList = async () => {
-    setShoppingList([]);
     try {
-      await clearShoppingList();
+      await mutateShoppingList(() => []);
       addNotification('success', `Lista de la compra vaciada 🧹`);
     } catch (e) { console.error('Error clearing shopping list:', e); }
   };
@@ -634,40 +666,13 @@ export default function App() {
 
     if (allItemsToAdd.length === 0) return;
 
-    let updatedList = [...shoppingList];
-    
-    allItemsToAdd.forEach(ingredientStr => {
-      const parsedNew = parseAndNormalizeIngredient(ingredientStr);
-      let found = false;
-      
-      for (let i = 0; i < updatedList.length; i++) {
-        const parsedExisting = parseAndNormalizeIngredient(updatedList[i].name);
-        
-        if (parsedExisting.name.toLowerCase() === parsedNew.name.toLowerCase() &&
-            parsedExisting.unit === parsedNew.unit) {
-          
-          const totalQty = parsedExisting.qty + parsedNew.qty;
-          const newStr = formatIngredientDisplay(parsedExisting.name, totalQty, parsedExisting.unit);
-          updatedList[i] = { ...updatedList[i], name: newStr };
-          found = true;
-          break;
-        }
-      }
-      
-      if (!found) {
-        const newStr = formatIngredientDisplay(parsedNew.name, parsedNew.qty, parsedNew.unit);
-        updatedList.push({ id: Date.now() + Math.random(), name: newStr });
-      }
-    });
-
-    setShoppingList(updatedList);
-
-    if (!skipNotification) {
-      addNotification('success', `Ingredientes añadidos y organizados 🛒`);
-    }
-
     try {
-      await replaceShoppingList(updatedList.map(item => item.name));
+      await mutateShoppingList(list =>
+        allItemsToAdd.reduce((acc, ingredientStr) => mergeIngredientIntoList(acc, ingredientStr), list)
+      );
+      if (!skipNotification) {
+        addNotification('success', `Ingredientes añadidos y organizados 🛒`);
+      }
     } catch (e) {
       console.error('Error persisting ingredients:', e);
     }
@@ -678,7 +683,10 @@ export default function App() {
       id: Date.now(),
       name: `${product.name} (${product.weight}g)`,
       calories: product.calories || 0,
-      mealType: 'snack',
+      protein: product.protein || 0,
+      carbs: product.carbs || 0,
+      fat: product.fat || 0,
+      mealType: normalizeMealType(product.mealType),
       createdAt: new Date(),
       isScanned: true,
       brand: product.brand,
@@ -868,12 +876,12 @@ export default function App() {
               messages={chatMessages}
               setMessages={setChatMessages}
               onAddShoppingItems={async (items) => {
-                const newItems = items.map(name => ({ id: Date.now() + Math.random(), name }));
-                setShoppingList(prev => [...prev, ...newItems]);
-                for (const name of items) {
-                  try { await addShoppingItem(name); } catch (e) { console.error('Error al añadir item:', e); }
-                }
-                addNotification('success', `Añadidos ${items.length} productos a la lista 🛒`);
+                try {
+                  await mutateShoppingList(list =>
+                    items.reduce((acc, name) => mergeIngredientIntoList(acc, name), list)
+                  );
+                  addNotification('success', `Añadidos ${items.length} productos a la lista 🛒`);
+                } catch (e) { console.error('Error al añadir items:', e); }
               }}
               onAddLogEntry={async (entry) => {
                 const normalizedMealType = normalizeMealType(entry.mealType);
@@ -912,13 +920,13 @@ export default function App() {
                   const ingredientPart = entry.name.split(/ con | y /i).slice(1).join(' y ');
                   if (ingredientPart) {
                     const rawIngredients = ingredientPart.split(/,| y /i).map(i => i.trim()).filter(Boolean);
-                    const newItems = rawIngredients.map(name => ({ id: Date.now() + Math.random(), name }));
-                    if (newItems.length) {
-                      setShoppingList(prev => [...prev, ...newItems]);
-                      for (const name of rawIngredients) {
-                        try { await addShoppingItem(name); } catch (e) { console.error('Error al añadir ingrediente:', e); }
-                      }
-                      addNotification('success', `Ingredientes añadidos a la lista de la compra: ${rawIngredients.join(', ')}`);
+                    if (rawIngredients.length) {
+                      try {
+                        await mutateShoppingList(list =>
+                          rawIngredients.reduce((acc, name) => mergeIngredientIntoList(acc, name), list)
+                        );
+                        addNotification('success', `Ingredientes añadidos a la lista de la compra: ${rawIngredients.join(', ')}`);
+                      } catch (e) { console.error('Error al añadir ingredientes:', e); }
                     }
                   }
                 }

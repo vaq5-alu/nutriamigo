@@ -491,7 +491,7 @@ app.post('/api/ai/chat', authenticateUser, async (req, res) => {
         `;
 
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
+            model: "gemini-3.5-flash",
             systemInstruction: {
                 parts: [{ text: systemPrompt }]
             }
@@ -549,7 +549,7 @@ app.post('/api/ai/menu', authenticateUser, async (req, res) => {
         - mealType: "desayuno", "comida", "snack" o "cena"
         - tags: Array de strings (ej. "alto en proteína")`;
 
-        const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-flash-latest", "gemini-pro-latest"];
+        const modelsToTry = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-flash-latest", "gemini-pro-latest"];
         let result;
         let lastError;
 

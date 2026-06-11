@@ -64,7 +64,7 @@ export default function DailyLogScreen({ profileData, dailyLog, onDeleteLogEntry
   };
 
   const totalCalories = dailyLog.reduce((sum, item) => sum + (item.calories || 0), 0);
-  const goalCalories = profileData?.dailyCalories || 2000;
+  const goalCalories = profileData?.calories || 2000;
   const remaining = goalCalories - totalCalories;
 
   const handleScanSuccess = async (decodedText) => {
@@ -79,6 +79,9 @@ export default function DailyLogScreen({ profileData, dailyLog, onDeleteLogEntry
           name: product.product_name || "Producto desconocido",
           brand: product.brands || "",
           calories100g: product.nutriments['energy-kcal_100g'] || 0,
+          protein100g: product.nutriments['proteins_100g'] || 0,
+          carbs100g: product.nutriments['carbohydrates_100g'] || 0,
+          fat100g: product.nutriments['fat_100g'] || 0,
           nutriscore: product.nutriscore_grade?.toUpperCase() || "?",
           image: product.image_front_small_url
         });
@@ -95,11 +98,18 @@ export default function DailyLogScreen({ profileData, dailyLog, onDeleteLogEntry
   const handleAddProduct = () => {
     if (!scannedProduct) return;
 
-    const calculatedCalories = Math.round((scannedProduct.calories100g * grams) / 100);
+    // Escalar valores por 100g a la cantidad elegida (macros con 1 decimal)
+    const perGrams = (value100g, decimals = 0) => {
+      const factor = Math.pow(10, decimals);
+      return Math.round(((value100g * grams) / 100) * factor) / factor;
+    };
 
     onAddScannedFood({
       name: scannedProduct.name,
-      calories: calculatedCalories,
+      calories: perGrams(scannedProduct.calories100g),
+      protein: perGrams(scannedProduct.protein100g, 1),
+      carbs: perGrams(scannedProduct.carbs100g, 1),
+      fat: perGrams(scannedProduct.fat100g, 1),
       brand: scannedProduct.brand,
       nutriscore: scannedProduct.nutriscore,
       weight: grams,
@@ -265,11 +275,18 @@ export default function DailyLogScreen({ profileData, dailyLog, onDeleteLogEntry
                 </select>
               </div>
 
-              <div className="p-3 bg-indigo-50 rounded-lg flex justify-between items-center">
-                <span className="font-medium text-indigo-900">Total Calorías:</span>
-                <span className="font-bold text-xl text-indigo-700">
-                  {Math.round((scannedProduct.calories100g * grams) / 100)} kcal
-                </span>
+              <div className="p-3 bg-indigo-50 rounded-lg">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium text-indigo-900">Total Calorías:</span>
+                  <span className="font-bold text-xl text-indigo-700">
+                    {Math.round((scannedProduct.calories100g * grams) / 100)} kcal
+                  </span>
+                </div>
+                <div className="flex justify-between items-center mt-1 text-sm text-indigo-800">
+                  <span>P: {Math.round((scannedProduct.protein100g * grams) / 10) / 10}g</span>
+                  <span>C: {Math.round((scannedProduct.carbs100g * grams) / 10) / 10}g</span>
+                  <span>G: {Math.round((scannedProduct.fat100g * grams) / 10) / 10}g</span>
+                </div>
               </div>
             </div>
 

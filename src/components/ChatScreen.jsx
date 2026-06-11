@@ -76,9 +76,11 @@ export default function ChatScreen({ user, profileData, dailyLog, shoppingList, 
                     const actions = response.data;
                     let feedbackMsg = "";
 
+                    // Ejecutar las acciones EN ORDEN: cada una debe terminar de
+                    // persistir antes de empezar la siguiente, o se pisan entre sí
                     for (const action of actions) {
                         if (action.action === 'add_shopping' && action.items) {
-                            onAddShoppingItems(action.items);
+                            await onAddShoppingItems(action.items);
                             feedbackMsg += `Añadido a lista: ${action.items.join(', ')}. `;
                         }
                         else if (action.action === 'add_log') {
@@ -91,30 +93,30 @@ export default function ChatScreen({ user, profileData, dailyLog, shoppingList, 
                                 mealType: action.mealType || 'snack',
                                 isTomorrow: action.isTomorrow || false
                             };
-                            onAddLogEntry(entry);
+                            await onAddLogEntry(entry);
                             feedbackMsg += `Registrado: ${action.item}${action.isTomorrow ? ' (para mañana)' : ''}. `;
                         }
                         else if (action.action === 'remove_log') {
                             if (onRemoveLogEntry) {
-                                onRemoveLogEntry(action.item);
+                                await onRemoveLogEntry(action.item);
                                 feedbackMsg += `Eliminado del diario: ${action.item}. `;
                             }
                         }
                         else if (action.action === 'remove_shopping') {
                             if (onRemoveShoppingItem) {
-                                onRemoveShoppingItem(action.item);
+                                await onRemoveShoppingItem(action.item);
                                 feedbackMsg += `Eliminado de lista: ${action.item}. `;
                             }
                         }
                         else if (action.action === 'clear_shopping') {
                             if (onClearShoppingList) {
-                                onClearShoppingList();
+                                await onClearShoppingList();
                                 feedbackMsg += `Lista de la compra vaciada. `;
                             }
                         }
                         else if (action.action === 'clear_log') {
                             if (onClearDailyLog) {
-                                onClearDailyLog();
+                                await onClearDailyLog();
                                 feedbackMsg += `Diario de hoy vaciado. `;
                             }
                         }
