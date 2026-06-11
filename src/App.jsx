@@ -916,19 +916,6 @@ export default function App() {
                 } else {
                   setDailyLog(prev => [newEntry, ...prev]);
                   addNotification('success', `Añadido al diario: ${entry.name} 📅`);
-                  
-                  const ingredientPart = entry.name.split(/ con | y /i).slice(1).join(' y ');
-                  if (ingredientPart) {
-                    const rawIngredients = ingredientPart.split(/,| y /i).map(i => i.trim()).filter(Boolean);
-                    if (rawIngredients.length) {
-                      try {
-                        await mutateShoppingList(list =>
-                          rawIngredients.reduce((acc, name) => mergeIngredientIntoList(acc, name), list)
-                        );
-                        addNotification('success', `Ingredientes añadidos a la lista de la compra: ${rawIngredients.join(', ')}`);
-                      } catch (e) { console.error('Error al añadir ingredientes:', e); }
-                    }
-                  }
                 }
               }}
               onRemoveLogEntry={async (itemName) => {
