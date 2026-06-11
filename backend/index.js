@@ -490,7 +490,7 @@ app.post('/api/ai/chat', authenticateUser, async (req, res) => {
         [{"action": "add_shopping", "items": ["manzanas"]}]
         `;
 
-        const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+        const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3.5-flash"];
         let result;
         let lastError;
 
@@ -564,7 +564,7 @@ app.post('/api/ai/menu', authenticateUser, async (req, res) => {
         - mealType: "desayuno", "comida", "snack" o "cena"
         - tags: Array de strings (ej. "alto en proteína")`;
 
-        const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+        const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3.5-flash"];
         let result;
         let lastError;
 
