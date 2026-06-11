@@ -1,24 +1,4 @@
-import { auth } from '../firebaseConfig';
-
-const API_URL = 'http://localhost:3000/api';
-
-const fetchWithAuth = async (endpoint, options = {}) => {
-    const user = auth.currentUser;
-    const headers = { 
-        'Content-Type': 'application/json', 
-        ...options.headers 
-    };
-    if (user) {
-        headers['x-user-id'] = user.uid; // Usamos el UID de Firebase
-    }
-    
-    const response = await fetch(`${API_URL}${endpoint}`, { ...options, headers });
-    if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || 'Error en la API de IA');
-    }
-    return response.json();
-};
+import { fetchWithAuth } from './http.js';
 
 export const sendMessageToCoach = async (userMessage, context = {}) => {
     const data = await fetchWithAuth('/ai/chat', {
@@ -32,11 +12,17 @@ export const sendMessageToCoach = async (userMessage, context = {}) => {
         const [visibleText, actionsRaw] = fullText.split('---ACTIONS---');
         const jsonMatch = actionsRaw.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
-            return {
-                type: 'action',
-                data: JSON.parse(jsonMatch[0]),
-                text: visibleText.trim()
-            };
+            try {
+                return {
+                    type: 'action',
+                    data: JSON.parse(jsonMatch[0]),
+                    text: visibleText.trim()
+                };
+            } catch (e) {
+                // JSON malformado de la IA: mostramos solo el texto visible
+                console.warn('Acciones de la IA ilegibles:', e);
+                return { type: 'text', text: visibleText.trim() };
+            }
         }
     }
 

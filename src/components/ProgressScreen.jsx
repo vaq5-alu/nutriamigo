@@ -20,12 +20,20 @@ export default function ProgressScreen({ profileData, weightHistory, onAddWeight
   const [isAdding, setIsAdding] = useState(false);
   const [showCheckin, setShowCheckin] = useState(false);
 
-  // Helper para parsear fechas de forma segura
+  // Helper para parsear fechas evitando cualquier desfase UTC→local
   const parseDate = (dateInput) => {
     if (!dateInput) return new Date();
-    if (dateInput.toDate) return dateInput.toDate(); // Firestore Timestamp
-    if (dateInput instanceof Date) return dateInput;
-    return new Date(dateInput);
+    if (dateInput.toDate) return dateInput.toDate();
+    const d = dateInput instanceof Date ? dateInput : new Date(
+      typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.slice(0, 10))
+        ? dateInput.slice(0, 10) + 'T12:00:00'
+        : dateInput
+    );
+    // Reconstruir con getters locales para garantizar el día correcto
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const dy = String(d.getDate()).padStart(2, '0');
+    return new Date(`${y}-${mo}-${dy}T12:00:00`);
   };
 
   // Preparamos los datos para el gráfico
@@ -49,25 +57,14 @@ export default function ProgressScreen({ profileData, weightHistory, onAddWeight
 
     let points = Object.values(grouped);
 
-    // 3. Añadimos el peso inicial si no está en el historial
-    if (profileData.start_weight) {
-      const startDateObj = profileData.start_date ? parseDate(profileData.start_date) : new Date();
-      const startDateStr = format(startDateObj, 'yyyy-MM-dd');
-      
-      if (!grouped[startDateStr]) {
-        points.push({
-          dateStr: startDateStr,
-          displayDate: format(startDateObj, 'd MMM', { locale: es }),
-          weight: parseFloat(profileData.start_weight),
-          fullDate: startDateObj
-        });
-      }
-    }
-
-    // 4. Ordenamos por fecha real
+    // 4. Ordenamos por fecha real y exportamos timestamp para escala proporcional
     return points
       .sort((a, b) => a.fullDate - b.fullDate)
-      .map(p => ({ date: p.displayDate, weight: p.weight }));
+      .map(p => ({
+        timestamp: p.fullDate.getTime(),
+        date: p.displayDate,
+        weight: p.weight
+      }));
   })();
 
   const handleSave = (e) => {
@@ -111,7 +108,7 @@ export default function ProgressScreen({ profileData, weightHistory, onAddWeight
   const isOnTrack = startWeight !== null ? (isLossGoal ? totalChange <= 0 : totalChange >= 0) : true;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
 
       {/* Tarjeta de Resumen */}
       <div className="bg-white rounded-xl shadow-lg p-6">
@@ -141,16 +138,23 @@ export default function ProgressScreen({ profileData, weightHistory, onAddWeight
       </div>
 
       {/* Gráfico */}
-      <div className="bg-white rounded-xl shadow-lg p-6 h-80">
-        <h3 className="text-lg font-semibold text-gray-700 mb-4">Evolución</h3>
-        <div className="h-64 w-full">
+      <div className="bg-white rounded-xl shadow-lg p-6 h-64">
+        <h3 className="text-lg font-semibold text-gray-700 mb-3">Evolución</h3>
+        <div className="h-48 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis
-                dataKey="date"
-                tick={{ fontSize: 12 }}
+                dataKey="timestamp"
+                type="number"
+                scale="time"
+                domain={['dataMin', 'dataMax']}
+                ticks={chartData.map(d => d.timestamp)}
+                tickFormatter={(ts) => format(new Date(ts), 'd MMM', { locale: es })}
+                tick={{ fontSize: 11, angle: -40, textAnchor: 'end', dy: 2, dx: -2 }}
+                height={45}
                 stroke="#9CA3AF"
+                interval={0}
               />
               <YAxis
                 domain={['dataMin - 2', 'dataMax + 2']}
@@ -160,6 +164,8 @@ export default function ProgressScreen({ profileData, weightHistory, onAddWeight
                 unit="kg"
               />
               <Tooltip
+                labelFormatter={(ts) => format(new Date(ts), "d 'de' MMMM yyyy", { locale: es })}
+                formatter={(value) => [`${value} kg`, 'Peso']}
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
               />
               <Line

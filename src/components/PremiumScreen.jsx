@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function PremiumScreen({ user, onSubscribeSuccess, onGoBack }) {
+export default function PremiumScreen({ onSubscribeSuccess, onGoBack }) {
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
     const [cardData, setCardData] = useState({ number: '', expiry: '', cvc: '' });
@@ -13,7 +13,7 @@ export default function PremiumScreen({ user, onSubscribeSuccess, onGoBack }) {
             try {
                 await onSubscribeSuccess();
                 setSuccess(true);
-            } catch (err) {
+            } catch {
                 alert("Error al procesar el pago simulado.");
             } finally {
                 setLoading(false);

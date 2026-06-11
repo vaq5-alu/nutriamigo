@@ -5,8 +5,8 @@ const MealSection = ({ title, entries, onDelete, icon, color }) => {
   const totalCalories = entries.reduce((sum, entry) => sum + (entry.calories || 0), 0);
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
-      <div className={`p-4 ${color.bg} flex justify-between items-center`}>
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-2">
+      <div className={`p-2.5 ${color.bg} flex justify-between items-center`}>
         <div className="flex items-center gap-2">
           <span className="text-xl">{icon}</span>
           <h3 className={`font-bold ${color.text}`}>{title}</h3>
@@ -16,10 +16,10 @@ const MealSection = ({ title, entries, onDelete, icon, color }) => {
 
       <div className="divide-y divide-gray-50">
         {entries.length === 0 ? (
-          <p className="p-4 text-sm text-gray-400 italic text-center">No hay alimentos registrados.</p>
+          <p className="p-2 text-xs text-gray-400 italic text-center">No hay alimentos registrados.</p>
         ) : (
           entries.map(entry => (
-            <div key={entry.id} className="p-4 flex justify-between items-center hover:bg-gray-50 transition">
+            <div key={entry.id} className="px-3 py-2 flex justify-between items-center hover:bg-gray-50 transition">
               <div>
                 <p className="font-medium text-gray-900">{entry.name}</p>
                 <p className="text-xs text-gray-500">
@@ -49,7 +49,7 @@ const MealSection = ({ title, entries, onDelete, icon, color }) => {
   );
 };
 
-export default function DailyLogScreen({ profileData, dailyLog, onDeleteLogEntry, onAddIngredients, onAddScannedFood, selectedDate = new Date(), onDateChange }) {
+export default function DailyLogScreen({ profileData, dailyLog, onDeleteLogEntry, onAddScannedFood, selectedDate = new Date(), onDateChange }) {
   const [isScanning, setIsScanning] = useState(false);
   const [scannedProduct, setScannedProduct] = useState(null); // { name, calories100g, nutriscore, brand }
   const [grams, setGrams] = useState(100);
@@ -111,9 +111,9 @@ export default function DailyLogScreen({ profileData, dailyLog, onDeleteLogEntry
 
   return (
     <div className="max-w-3xl mx-auto">
-      <div className="flex justify-between items-end mb-8">
+      <div className="flex justify-between items-end mb-3">
         <div>
-          <h2 className="text-3xl font-bold text-gray-900">Diario de Comidas</h2>
+          <h2 className="text-xl font-bold text-gray-900">Diario de Comidas</h2>
           <div className="flex items-center gap-4 mt-2">
             <button
               onClick={() => {
@@ -170,10 +170,10 @@ export default function DailyLogScreen({ profileData, dailyLog, onDeleteLogEntry
         </div>
       </div>
 
-      <div className="mb-6">
+      <div className="mb-3">
         <button
           onClick={() => setIsScanning(true)}
-          className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-md hover:bg-indigo-700 transition flex items-center justify-center gap-2"
+          className="w-full py-2 bg-indigo-600 text-white rounded-xl font-bold shadow-md hover:bg-indigo-700 transition flex items-center justify-center gap-2 text-sm"
         >
           📷 Escanear Código de Barras
         </button>

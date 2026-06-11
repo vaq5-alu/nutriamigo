@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 // --- Componente de Pantalla: Lista de la Compra (Módulo 5) ---
-export default function ShoppingListScreen({ items, onAddItem, onDeleteItem }) {
+export default function ShoppingListScreen({ items, onAddItem, onDeleteItem, onClearAll }) {
   const [newItemName, setNewItemName] = useState("");
 
   const handleSubmit = (e) => {
@@ -13,7 +13,21 @@ export default function ShoppingListScreen({ items, onAddItem, onDeleteItem }) {
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
-      <h2 className="text-3xl font-bold text-gray-900 mb-6">Lista de la Compra</h2>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-3xl font-bold text-gray-900">Lista de la Compra</h2>
+        {items.length > 0 && (
+          <button
+            onClick={() => {
+              if (window.confirm("¿Seguro que quieres vaciar la lista de la compra?")) {
+                onClearAll();
+              }
+            }}
+            className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 text-sm font-medium transition cursor-pointer"
+          >
+            🧹 Vaciar Lista
+          </button>
+        )}
+      </div>
       
       <form onSubmit={handleSubmit} className="flex gap-2 mb-4">
         <input

@@ -16,10 +16,194 @@ import PremiumScreen from './components/PremiumScreen.jsx';
 import { recipes } from './data/recipeDatabase.js';
 
 import VerificationPendingScreen from './components/VerificationPendingScreen.jsx';
-import { loginUser, registerUser, getTodayCheckin, getProfile, updateProfile, logoutUser, checkVerificationStatus, getDailyLog, saveDailyLog, addLogEntry, deleteLogEntry, deleteLogEntryByName, clearDailyLog, addShoppingItem, deleteShoppingItem, clearShoppingList, getShoppingList, saveShoppingList, getWeightHistory, saveWeightHistory, getChatHistory, deleteUserAccount, syncUserWithBackend, subscribeToPremium, cancelPremium, reactivatePremium, getStreak } from './services/api.js';
-import { auth, onAuthStateChanged } from './firebaseConfig';
+import { loginUser, registerUser, getTodayCheckin, getProfile, updateProfile, logoutUser, checkVerificationStatus, getDailyLog, addLogEntry, deleteLogEntry, deleteLogEntryByName, clearDailyLog, addShoppingItem, clearShoppingList, getShoppingList, replaceShoppingList, getWeightHistory, saveWeightEntry, deleteUserAccount, syncUserWithBackend, subscribeToPremium, cancelPremium, reactivatePremium, getStreak } from './services/api.js';
+import { auth, onAuthStateChanged, sendPasswordResetEmail } from './firebaseConfig';
 
 const APP_NAME = "NutrIAmigo";
+
+// Devuelve "YYYY-MM-DD" en hora local sin desfase UTC
+const localDateStr = (d) => {
+  const dt = d instanceof Date ? d : new Date(d);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+};
+
+const MEAL_TYPE_MAP = {
+  'breakfast': 'desayuno',
+  'lunch': 'comida',
+  'dinner': 'cena',
+  'snack': 'snack',
+  'desayuno': 'desayuno',
+  'comida': 'comida',
+  'almuerzo': 'comida',
+  'cena': 'cena'
+};
+
+const normalizeMealType = (mealType) => {
+  const key = mealType ? mealType.toLowerCase() : 'snack';
+  return MEAL_TYPE_MAP[key] || key;
+};
+
+const CANONICAL_INGREDIENTS = [
+  { keywords: ['avena', 'copos de avena'], canonical: 'Avena', defaultUnit: 'g' },
+  { keywords: ['leche de almendra', 'leche de almendras'], canonical: 'Leche de Almendras', defaultUnit: 'ml' },
+  { keywords: ['leche desnatada'], canonical: 'Leche Desnatada', defaultUnit: 'ml' },
+  { keywords: ['leche de coco', 'leche coco'], canonical: 'Leche de Coco', defaultUnit: 'ml' },
+  { keywords: ['leche'], canonical: 'Leche', defaultUnit: 'ml' },
+  { keywords: ['yogur griego', 'yogurt griego'], canonical: 'Yogur Griego', defaultUnit: 'g' },
+  { keywords: ['plátano', 'platano', 'banana'], canonical: 'Plátano', defaultUnit: 'unidad' },
+  { keywords: ['manzana'], canonical: 'Manzana', defaultUnit: 'unidad' },
+  { keywords: ['nueces', 'nuez'], canonical: 'Nueces', defaultUnit: 'g' },
+  { keywords: ['almendra', 'almendras'], canonical: 'Almendras', defaultUnit: 'g' },
+  { keywords: ['chía', 'chia'], canonical: 'Semillas de Chía', defaultUnit: 'g' },
+  { keywords: ['proteína', 'proteina', 'scoop', 'whey'], canonical: 'Proteína en Polvo', defaultUnit: 'g' },
+  { keywords: ['salmón', 'salmon'], canonical: 'Salmón', defaultUnit: 'g' },
+  { keywords: ['pollo', 'pechuga de pollo'], canonical: 'Pechuga de Pollo', defaultUnit: 'g' },
+  { keywords: ['pavo', 'pechuga de pavo'], canonical: 'Pechuga de Pavo', defaultUnit: 'g' },
+  { keywords: ['quinoa'], canonical: 'Quinoa', defaultUnit: 'g' },
+  { keywords: ['brócoli', 'brocoli'], canonical: 'Brócoli', defaultUnit: 'g' },
+  { keywords: ['espárrago', 'esparrago', 'espárragos', 'esparragos'], canonical: 'Espárragos', defaultUnit: 'g' },
+  { keywords: ['fruto rojo', 'frutos rojos', 'arándanos', 'arandanos', 'fresas'], canonical: 'Frutos Rojos', defaultUnit: 'g' },
+  { keywords: ['pimiento'], canonical: 'Pimiento Rojo', defaultUnit: 'g' },
+  { keywords: ['zanahoria'], canonical: 'Zanahoria', defaultUnit: 'g' },
+  { keywords: ['calabacín', 'calabacin'], canonical: 'Calabacín', defaultUnit: 'g' },
+  { keywords: ['batata', 'boniato', 'camote'], canonical: 'Batata (Boniato)', defaultUnit: 'g' },
+  { keywords: ['canela'], canonical: 'Canela', defaultUnit: 'g' },
+  { keywords: ['aceite de oliva', 'aceite'], canonical: 'Aceite de Oliva', defaultUnit: 'ml' },
+  { keywords: ['limón', 'limon'], canonical: 'Limón', defaultUnit: 'unidad' },
+  { keywords: ['hierba', 'hierbas', 'romero', 'orégano', 'oregano', 'tomillo'], canonical: 'Hierbas Aromáticas', defaultUnit: 'g' },
+  { keywords: ['sal y pimienta', 'sal, pimienta', 'pimienta', 'sal'], canonical: 'Sal y Pimienta', defaultUnit: 'al gusto' },
+  { keywords: ['huevo', 'huevos'], canonical: 'Huevos', defaultUnit: 'unidad' },
+  { keywords: ['queso'], canonical: 'Queso', defaultUnit: 'g' }
+];
+
+const parseAndNormalizeIngredient = (rawStr) => {
+  const cleanStr = rawStr.trim().toLowerCase();
+  
+  let canon = null;
+  for (const item of CANONICAL_INGREDIENTS) {
+    if (item.keywords.some(keyword => cleanStr.includes(keyword))) {
+      canon = item;
+      break;
+    }
+  }
+  
+  let name = rawStr;
+  let qty = 1;
+  let unit = '';
+  
+  if (canon) {
+    name = canon.canonical;
+  }
+  
+  if (cleanStr.includes('pizca') || cleanStr.includes('una pizca')) {
+    qty = 1;
+    unit = (canon && canon.defaultUnit === 'g') ? 'g' : 'pizca';
+  } else if (cleanStr.includes('medio') || cleanStr.includes('media') || cleanStr.includes('1/2')) {
+    qty = 0.5;
+    unit = canon ? canon.defaultUnit : 'unidad';
+  } else if (cleanStr.includes('un toque') || cleanStr.includes('toque')) {
+    qty = 0.2;
+    unit = 'unidad';
+  } else if (cleanStr.includes('al gusto')) {
+    qty = 1;
+    unit = 'al gusto';
+  } else {
+    const numRegex = /([\d.,/]+)\s*(g|ml|cda|cdta|cucharada|cucharadita|scoop|vaso|taza|unidad|unidades|rebanada|rebanadas)?/i;
+    const match = cleanStr.match(numRegex);
+    
+    if (match) {
+      let rawQty = match[1];
+      let rawUnit = match[2] || '';
+      
+      if (rawQty.includes('/')) {
+        const [n, d] = rawQty.split('/');
+        qty = parseFloat(n) / parseFloat(d) || 1;
+      } else {
+        qty = parseFloat(rawQty.replace(',', '.')) || 1;
+      }
+      
+      unit = rawUnit ? rawUnit : (canon ? canon.defaultUnit : 'unidad');
+      
+      const parenMatch = cleanStr.match(/\((\d+)\s*(g|ml)\)/);
+      if (parenMatch) {
+        const parenQty = parseFloat(parenMatch[1]);
+        const parenUnit = parenMatch[2].toLowerCase();
+        
+        if (unit !== parenUnit) {
+          qty = parenQty * qty;
+          unit = parenUnit;
+        }
+      }
+      
+      if (unit) {
+        unit = unit.toLowerCase();
+        if (unit.startsWith('g')) {
+          unit = 'g';
+        } else if (unit.startsWith('ml')) {
+          unit = 'ml';
+        } else if (unit === 'cda' || unit.startsWith('cucharada')) {
+          qty = qty * 15;
+          unit = (canon && canon.defaultUnit === 'ml') ? 'ml' : 'g';
+        } else if (unit === 'cdta' || unit.startsWith('cucharadita')) {
+          qty = qty * 5;
+          unit = (canon && canon.defaultUnit === 'ml') ? 'ml' : 'g';
+        } else if (unit.startsWith('rebanada')) {
+          unit = 'rebanada';
+        } else if (unit.startsWith('scoop')) {
+          qty = qty * 30;
+          unit = 'g';
+        } else if (unit.startsWith('vaso') || unit.startsWith('taza')) {
+          qty = qty * 200;
+          unit = (canon && canon.defaultUnit === 'ml') ? 'ml' : 'g';
+        }
+      }
+    } else {
+      qty = null;
+      unit = '';
+    }
+  }
+  
+  if (!canon) {
+    let nameClean = rawStr.replace(/^[\d.,/\s]*(g|ml|cda|cdta|cucharada|cucharadita|scoop|vaso|taza|unidad|unidades|rebanada|rebanadas)?(\s+de\s+|\s+)?/i, '');
+    nameClean = nameClean.replace(/\(.*?\)/g, '');
+    nameClean = nameClean.replace(/al gusto/g, '');
+    nameClean = nameClean.trim();
+    name = nameClean.charAt(0).toUpperCase() + nameClean.slice(1);
+    unit = unit || '';
+  }
+  
+  return { name, qty, unit };
+};
+
+const formatIngredientDisplay = (name, qty, unit) => {
+  if (qty === null || qty === undefined) {
+    return name;
+  }
+  if (unit === 'al gusto') {
+    return `${name} (al gusto)`;
+  }
+  
+  let displayQty = qty;
+  let displayUnit = unit;
+  
+  if (unit === 'g' && qty >= 1000) {
+    displayQty = qty / 1000;
+    displayUnit = 'kg';
+  } else if (unit === 'ml' && qty >= 1000) {
+    displayQty = qty / 1000;
+    displayUnit = 'L';
+  }
+  
+  const formattedQty = Number.isInteger(displayQty) ? displayQty : parseFloat(displayQty.toFixed(2));
+  
+  if (displayUnit === 'unidad' || displayUnit === 'unidades') {
+    return `${name} (${formattedQty} ${formattedQty === 1 ? 'unidad' : 'unidades'})`;
+  }
+  if (!displayUnit) {
+    return `${name} (x${formattedQty})`;
+  }
+  return `${name} (${formattedQty}${displayUnit})`;
+};
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -27,27 +211,37 @@ export default function App() {
   const [user, setUser] = useState(null); // { id, username, email }
   const [todayCheckin, setTodayCheckin] = useState(null);
 
+  const currentXPRef = useRef(0);
+  useEffect(() => {
+    if (profileData) {
+      currentXPRef.current = profileData.xp || 0;
+    }
+  }, [profileData]);
+
   const [currentView, setCurrentView] = useState('dashboard');
-  const [activeTab, setActiveTab] = useState('dashboard');
   const [isPremium, setIsPremium] = useState(null); // null = loading, true/false = determined
   const [premiumUntil, setPremiumUntil] = useState(null);
   const [streak, setStreak] = useState(0);
   const [shoppingList, setShoppingList] = useState([]);
   const [dailyLog, setDailyLog] = useState([]);
   const [weightHistory, setWeightHistory] = useState([]);
-  const [dataLoaded, setDataLoaded] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
 
   const [chatMessages, setChatMessages] = useState(() => {
     try {
       const saved = localStorage.getItem('nutricoach_chat');
       return saved ? JSON.parse(saved) : [];
-    } catch (e) { return []; }
+    } catch {
+      return [];
+    }
   });
 
   useEffect(() => {
     if (chatMessages.length > 0) {
       localStorage.setItem('nutricoach_chat', JSON.stringify(chatMessages));
+    } else {
+      // Evita que el chat de un usuario persista para el siguiente tras cerrar sesión
+      localStorage.removeItem('nutricoach_chat');
     }
   }, [chatMessages]);
 
@@ -87,7 +281,11 @@ export default function App() {
           // Cargar Perfil desde MySQL
           try {
             const profile = await getProfile();
-            if (profile) setProfileData(profile);
+            if (profile) {
+              setProfileData(profile);
+              setIsPremium(!!profile.is_premium);
+              setPremiumUntil(profile.premium_until);
+            }
           } catch (e) {
             console.error("Error loading profile from MySQL:", e);
           }
@@ -109,12 +307,10 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [currentView]);
+  }, []);
 
   // --- Data Persistence Syncer ---
 
-  const loadedDateRef = useRef(null);
-  
   const checkProfileCompleteness = (p) => {
     if (!p) return false;
     const required = ['age', 'gender', 'height', 'current_weight', 'target_weight', 'goal'];
@@ -137,16 +333,12 @@ export default function App() {
       setDailyLog([]);
       setShoppingList([]);
       setWeightHistory([]);
-      setDataLoaded(false);
       return;
     }
 
     const fetchStreak = async () => {
-      if (!user) return;
       try {
-        console.log("[STREAK] Fetching streak for user:", user.id);
         const streakData = await getStreak();
-        console.log("[STREAK] Received:", streakData);
         setStreak(streakData?.streak || 0);
       } catch (streakErr) {
         console.error("Error fetching streak:", streakErr);
@@ -155,32 +347,21 @@ export default function App() {
 
     const loadUserData = async () => {
       try {
-        console.log("Loading user data for date:", selectedDate.toISOString());
-        setDataLoaded(false); 
 
         setDailyLog([]);
         setWeightHistory([]);
 
-        const dateStr = selectedDate.toISOString().split('T')[0];
+        const dateStr = localDateStr(selectedDate);
 
-        if (profileData) {
-          setIsPremium(!!profileData.is_premium);
-          setPremiumUntil(profileData.premium_until);
-        }
-        
-        // Load Daily Log
-        const logs = await getDailyLog(user.id, dateStr);
+        // Diario, historial de peso y racha en paralelo (antes era secuencial)
+        const [logs, history] = await Promise.all([
+          getDailyLog(user.id, dateStr),
+          getWeightHistory(),
+          fetchStreak()
+        ]);
         setDailyLog(logs);
-
-        // Load Weight History
-        const history = await getWeightHistory();
         setWeightHistory(history);
 
-        loadedDateRef.current = dateStr;
-        
-        await fetchStreak();
-        
-        setDataLoaded(true);
       } catch (e) {
         console.error("Error loading user data:", e);
         addNotification('error', 'Error cargando datos del diario.');
@@ -204,26 +385,12 @@ export default function App() {
     loadShoppingList();
   }, [user]);
 
-  useEffect(() => {
-    if (!user || !dataLoaded) return;
-    const dateStr = selectedDate.toISOString().split('T')[0];
-
-    if (loadedDateRef.current !== dateStr) {
-      return;
-    }
-
-    saveDailyLog(user.id, dateStr, dailyLog);
-  }, [dailyLog, user, dataLoaded, selectedDate]);
-
-
-
-  useEffect(() => {
-    if (!user || !dataLoaded) return;
-    saveWeightHistory(user.id, weightHistory);
-  }, [weightHistory, user, dataLoaded]);
-
-  const handleCheckinCompleted = (data) => {
+  const handleCheckinCompleted = async (data) => {
     setTodayCheckin(data);
+    try {
+      const streakData = await getStreak();
+      setStreak(streakData?.streak || 0);
+    } catch (e) { console.error("Error updating streak after checkin:", e); }
   };
 
   // --- Funciones de Autenticación ---
@@ -281,7 +448,6 @@ export default function App() {
     setDailyLog([]);
     setWeightHistory([]);
     setChatMessages([]);
-    setDataLoaded(false);
     localStorage.removeItem('nutricoach_user');
     setCurrentView('dashboard');
   };
@@ -295,7 +461,6 @@ export default function App() {
       setDailyLog([]);
       setWeightHistory([]);
       setChatMessages([]);
-      setDataLoaded(false);
       localStorage.removeItem('nutricoach_user');
       setCurrentView('dashboard');
       alert("Tu cuenta y todos tus datos han sido borrados permanentemente.");
@@ -306,10 +471,31 @@ export default function App() {
 
 
   const handleAddShoppingItem = async (itemName) => {
-    const newItem = { id: Date.now(), name: itemName };
-    setShoppingList([...shoppingList, newItem]);
+    const parsedNew = parseAndNormalizeIngredient(itemName);
+    
+    let found = false;
+    let updatedList = shoppingList.map(item => {
+      const parsedExisting = parseAndNormalizeIngredient(item.name);
+      if (parsedExisting.name.toLowerCase() === parsedNew.name.toLowerCase() &&
+          parsedExisting.unit === parsedNew.unit) {
+        
+        const totalQty = parsedExisting.qty + parsedNew.qty;
+        const newStr = formatIngredientDisplay(parsedExisting.name, totalQty, parsedExisting.unit);
+        found = true;
+        return { ...item, name: newStr };
+      }
+      return item;
+    });
+    
+    if (!found) {
+      const newStr = formatIngredientDisplay(parsedNew.name, parsedNew.qty, parsedNew.unit);
+      updatedList.push({ id: Date.now(), name: newStr });
+    }
+    
+    setShoppingList(updatedList);
+
     try {
-      await addShoppingItem(itemName);
+      await replaceShoppingList(updatedList.map(item => item.name));
       handleAddXP(5);
     } catch (e) {
       console.error('Error al guardar item:', e);
@@ -318,21 +504,30 @@ export default function App() {
   };
 
   const handleDeleteShoppingItem = async (itemId) => {
-    const itemToDelete = shoppingList.find(i => i.id === itemId);
-    setShoppingList(prev => prev.filter(item => item.id !== itemId));
-    
-    if (itemToDelete) {
-      try {
-        await deleteShoppingItem(itemToDelete.name);
-      } catch (e) { console.error('Error deleting item:', e); }
+    const updatedList = shoppingList.filter(item => item.id !== itemId);
+    setShoppingList(updatedList);
+
+    try {
+      await replaceShoppingList(updatedList.map(item => item.name));
+    } catch (e) {
+      console.error('Error deleting item:', e);
     }
   };
 
   const handleDeleteShoppingItemByName = async (itemName) => {
-    setShoppingList(prev => prev.filter(item => !item.name.toLowerCase().includes(itemName.toLowerCase())));
+    const updatedList = shoppingList.filter(item => !item.name.toLowerCase().includes(itemName.toLowerCase()));
+    setShoppingList(updatedList);
     try {
-      await deleteShoppingItem(itemName);
+      await replaceShoppingList(updatedList.map(item => item.name));
     } catch (e) { console.error('Error deleting item by name:', e); }
+  };
+
+  const handleClearShoppingList = async () => {
+    setShoppingList([]);
+    try {
+      await clearShoppingList();
+      addNotification('success', `Lista de la compra vaciada 🧹`);
+    } catch (e) { console.error('Error clearing shopping list:', e); }
   };
 
   const handleCancelPremium = async () => {
@@ -371,38 +566,30 @@ export default function App() {
     }
   };
 
-  const handleAddRecipeToLog = async (recipe, mealType) => {
-    let normalizedMealType = mealType ? mealType.toLowerCase() : 'snack';
-    const typeMap = {
-      'breakfast': 'desayuno',
-      'lunch': 'comida',
-      'dinner': 'cena',
-      'snack': 'snack',
-      'desayuno': 'desayuno',
-      'comida': 'comida',
-      'almuerzo': 'comida',
-      'cena': 'cena'
-    };
-    if (typeMap[normalizedMealType]) {
-      normalizedMealType = typeMap[normalizedMealType];
-    }
+  const handleAddRecipeToLog = async (recipe, mealType, skipNotification = false) => {
+    const normalizedMealType = normalizeMealType(mealType);
 
     const newEntry = {
-      id: Date.now() + Math.random(), // Unique ID for bulk adds
+      id: Date.now() + Math.random(),
       name: recipe.name,
       calories: recipe.calories,
+      protein: recipe.protein || 0,
+      carbs: recipe.carbs || 0,
+      fat: recipe.fat || 0,
       mealType: normalizedMealType,
       createdAt: new Date(),
       recipeId: recipe.id
     };
 
-    const dateStr = selectedDate.toISOString().split('T')[0];
+    const dateStr = localDateStr(selectedDate);
     try {
       await addLogEntry(newEntry, dateStr);
       // 2. Update local state
       setDailyLog(prevLogs => [newEntry, ...prevLogs]);
       handleAddXP(10);
-      addNotification('success', `Añadido al diario: ${recipe.name} 📅`);
+      if (!skipNotification) {
+        addNotification('success', `Añadido al diario: ${recipe.name} 📅`);
+      }
     } catch (e) {
       console.error('Error al guardar receta:', e);
       addNotification('error', 'Error al guardar en el diario ❌');
@@ -416,99 +603,73 @@ export default function App() {
     } catch (e) { console.error('Error deleting log entry:', e); }
   };
 
-  const parseIngredient = (str) => {
-    const flowMatch = str.match(/^(.*?)\s*\(([\d\./,]+)\s*(.*?)\)$/);
-
-    if (!flowMatch) {
-      return { name: str.trim(), qty: 1, unit: null, isMeasurable: false };
-    }
-
-    const name = flowMatch[1].trim();
-    const rawQty = flowMatch[2];
-    const unit = flowMatch[3].trim();
-
-    let qty = 0;
-    if (rawQty.includes('/')) {
-      const [num, den] = rawQty.split('/');
-      qty = parseFloat(num) / parseFloat(den);
+  const handleAddIngredientsToShoppingList = async (recipeOrIdOrList, skipNotification = false) => {
+    let recipesToProcess = [];
+    
+    if (Array.isArray(recipeOrIdOrList)) {
+      recipesToProcess = recipeOrIdOrList;
     } else {
-      qty = parseFloat(rawQty.replace(',', '.'));
+      let recipe = recipeOrIdOrList;
+      if (typeof recipeOrIdOrList === 'number' || typeof recipeOrIdOrList === 'string') {
+        recipe = recipes.find(r => r.id === recipeOrIdOrList);
+      }
+      if (recipe) {
+        recipesToProcess = [recipe];
+      }
     }
 
-    return { name, qty, unit, isMeasurable: true };
-  };
+    if (recipesToProcess.length === 0) return;
 
-  const handleAddIngredientsToShoppingList = async (recipeOrId) => {
-    let recipe = recipeOrId;
-
-    if (typeof recipeOrId === 'number' || typeof recipeOrId === 'string') {
-      recipe = recipes.find(r => r.id === recipeOrId);
-    }
-
-    if (!recipe) return;
-
-    const itemsToAdd = recipe.shoppingList || recipe.ingredients || [];
-    if (itemsToAdd.length === 0) return;
-
-    setShoppingList(prevList => {
-      let newList = [...prevList];
-
-      itemsToAdd.forEach(rawIngredient => {
-        // Normalize raw string
-        let ingredientStr = rawIngredient;
-        if (typeof rawIngredient === 'object' && rawIngredient.name) {
-          ingredientStr = `${rawIngredient.name} (${rawIngredient.amount})`; // Fallback for obj format
+    const allItemsToAdd = [];
+    recipesToProcess.forEach(recipe => {
+      const items = recipe.shoppingList || recipe.ingredients || [];
+      items.forEach(item => {
+        let ingredientStr = item;
+        if (typeof item === 'object' && item.name) {
+          ingredientStr = `${item.name} (${item.amount})`;
         }
-
-        const newItem = parseIngredient(ingredientStr);
-        let found = false;
-
-        for (let i = 0; i < newList.length; i++) {
-          const existingItem = parseIngredient(newList[i].name);
-
-          if (existingItem.name.toLowerCase() === newItem.name.toLowerCase() &&
-            existingItem.unit === newItem.unit) {
-
-            const totalQty = existingItem.qty + newItem.qty;
-
-            let newStr = "";
-            if (existingItem.isMeasurable) {
-              // Unless it's an integer.
-              const displayQty = Number.isInteger(totalQty) ? totalQty : totalQty.toFixed(1).replace('.0', '');
-              newStr = `${existingItem.name} (${displayQty}${existingItem.unit ? ' ' + existingItem.unit : ''})`;
-              // User input was "(150g)", regex captured "g". 
-              // Actually regex `\s*` absorbed space. 
-
-            } else {
-              // Or "Name (x2)".
-              newStr = `${existingItem.name} (x${totalQty})`;
-            }
-
-            newList[i] = { ...newList[i], name: newStr };
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          newList.push({ id: Date.now() + Math.random(), name: ingredientStr });
-        }
+        allItemsToAdd.push(ingredientStr);
       });
-
-      return newList;
     });
 
-    addNotification('success', `Ingredientes añadidos y organizados 🛒`);
+    if (allItemsToAdd.length === 0) return;
 
-    for (const item of itemsToAdd) {
-        let name = item;
-        if (typeof item === 'object' && item.name) {
-            name = `${item.name} (${item.amount})`;
+    let updatedList = [...shoppingList];
+    
+    allItemsToAdd.forEach(ingredientStr => {
+      const parsedNew = parseAndNormalizeIngredient(ingredientStr);
+      let found = false;
+      
+      for (let i = 0; i < updatedList.length; i++) {
+        const parsedExisting = parseAndNormalizeIngredient(updatedList[i].name);
+        
+        if (parsedExisting.name.toLowerCase() === parsedNew.name.toLowerCase() &&
+            parsedExisting.unit === parsedNew.unit) {
+          
+          const totalQty = parsedExisting.qty + parsedNew.qty;
+          const newStr = formatIngredientDisplay(parsedExisting.name, totalQty, parsedExisting.unit);
+          updatedList[i] = { ...updatedList[i], name: newStr };
+          found = true;
+          break;
         }
-        try {
-            await addShoppingItem(name);
-        } catch (e) {
-            console.error('Error al persistir ingrediente:', e);
-        }
+      }
+      
+      if (!found) {
+        const newStr = formatIngredientDisplay(parsedNew.name, parsedNew.qty, parsedNew.unit);
+        updatedList.push({ id: Date.now() + Math.random(), name: newStr });
+      }
+    });
+
+    setShoppingList(updatedList);
+
+    if (!skipNotification) {
+      addNotification('success', `Ingredientes añadidos y organizados 🛒`);
+    }
+
+    try {
+      await replaceShoppingList(updatedList.map(item => item.name));
+    } catch (e) {
+      console.error('Error persisting ingredients:', e);
     }
   };
 
@@ -525,7 +686,7 @@ export default function App() {
       weight: product.weight
     };
 
-    const dateStr = selectedDate.toISOString().split('T')[0];
+    const dateStr = localDateStr(selectedDate);
     try {
       await addLogEntry(newEntry, dateStr);
       setDailyLog([newEntry, ...dailyLog]);
@@ -539,12 +700,21 @@ export default function App() {
 
   const handleAddWeight = async (weight) => {
     const today = new Date();
-    const isSameDay = (d1, d2) =>
-      d1.getDate() === d2.getDate() &&
-      d1.getMonth() === d2.getMonth() &&
-      d1.getFullYear() === d2.getFullYear();
+    
+    // Función auxiliar para tener una fecha constante sin afectar la zona horaria
+    const getLocalYMD = (d) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    
+    const todayStr = getLocalYMD(today);
 
-    const existingEntryIndex = weightHistory.findIndex(entry => isSameDay(new Date(entry.date), today));
+    const existingEntryIndex = weightHistory.findIndex(entry => {
+      const entryDate = entry.date instanceof Date ? entry.date : new Date(entry.date);
+      return getLocalYMD(entryDate) === todayStr;
+    });
 
     let newHistory;
     if (existingEntryIndex >= 0) {
@@ -557,6 +727,14 @@ export default function App() {
     }
 
     setWeightHistory(newHistory);
+
+    // Persistir el peso del día (upsert en el backend)
+    try {
+      await saveWeightEntry(today, weight);
+    } catch (error) {
+      console.error("Error saving weight entry:", error);
+      alert("Error guardando el peso en la nube, pero se guardó localmente.");
+    }
 
     const updatedProfile = { ...profileData, current_weight: weight.toString() };
     if (!updatedProfile.start_weight) {
@@ -584,19 +762,23 @@ export default function App() {
 
   const calculateLevel = (xp) => Math.floor((xp || 0) / 100) + 1;
 
-  const handleAddXP = (amount) => {
+  const handleAddXP = async (amount) => {
     if (!profileData) return;
-    const currentXP = profileData.xp || 0;
+    const currentXP = currentXPRef.current;
     const newXP = currentXP + amount;
+    currentXPRef.current = newXP;
+
     const oldLevel = calculateLevel(currentXP);
     const newLevel = calculateLevel(newXP);
 
-    const updatedProfile = { ...profileData, xp: newXP, level: newLevel };
-    setProfileData(updatedProfile);
-    // localStorage.setItem('nutricoach_profile', JSON.stringify(updatedProfile));
+    setProfileData(prev => prev ? { ...prev, xp: newXP, level: newLevel } : prev);
+
+    try {
+      await updateProfile({ xp: newXP, level: newLevel });
+    } catch (e) { console.error("Error persisting XP:", e); }
 
     if (newLevel > oldLevel) {
-      alert(`¡FELICIDADES! Has subido al Nivel ${newLevel} 🎉`);
+      addNotification('success', `¡Subiste al Nivel ${newLevel}! 🎉`);
     }
   };
 
@@ -636,7 +818,6 @@ export default function App() {
 
   // --- Renderizado Condicional ---
   const renderScreen = () => {
-    console.log("Render Screen - currentView:", currentView, "profileData:", !!profileData);
     if (profileData) {
       switch (currentView) {
         case 'dashboard': 
@@ -661,8 +842,8 @@ export default function App() {
             onCancelPremium={handleCancelPremium}
             onReactivatePremium={handleReactivatePremium}
           />;
-        case 'shopping': return <ShoppingListScreen items={shoppingList} onAddItem={handleAddShoppingItem} onDeleteItem={handleDeleteShoppingItem} />;
-        case 'generator': return <MenuGeneratorScreen profileData={profileData} checkinData={todayCheckin} onAddRecipeToLog={handleAddRecipeToLog} onAddIngredients={handleAddIngredientsToShoppingList} />;
+        case 'shopping': return <ShoppingListScreen items={shoppingList} onAddItem={handleAddShoppingItem} onDeleteItem={handleDeleteShoppingItem} onClearAll={handleClearShoppingList} />;
+        case 'generator': return <MenuGeneratorScreen profileData={profileData} checkinData={todayCheckin} onAddRecipeToLog={handleAddRecipeToLog} onAddIngredients={handleAddIngredientsToShoppingList} addNotification={addNotification} />;
         case 'dailyLog': return (
           <DailyLogScreen
             profileData={profileData}
@@ -695,14 +876,9 @@ export default function App() {
                 addNotification('success', `Añadidos ${items.length} productos a la lista 🛒`);
               }}
               onAddLogEntry={async (entry) => {
-                let normalizedMealType = entry.mealType ? entry.mealType.toLowerCase() : 'snack';
-                const typeMap = {
-                  'breakfast': 'desayuno', 'lunch': 'comida', 'dinner': 'cena', 'snack': 'snack',
-                  'desayuno': 'desayuno', 'comida': 'comida', 'almuerzo': 'comida', 'cena': 'cena'
-                };
-                if (typeMap[normalizedMealType]) normalizedMealType = typeMap[normalizedMealType];
+                const normalizedMealType = normalizeMealType(entry.mealType);
 
-                const newEntry = { 
+                const newEntry = {
                   ...entry, 
                   mealType: normalizedMealType,
                   calories: entry.calories || 0,
@@ -713,9 +889,10 @@ export default function App() {
                   createdAt: new Date() 
                 };
                 
-                const dateStr = entry.isTomorrow 
-                  ? new Date(Date.now() + 86400000).toISOString().split('T')[0] 
-                  : selectedDate.toISOString().split('T')[0];
+                const tmrDate = new Date(); tmrDate.setDate(tmrDate.getDate() + 1);
+                const dateStr = entry.isTomorrow
+                  ? localDateStr(tmrDate)
+                  : localDateStr(selectedDate);
 
                 try {
                   await addLogEntry(newEntry, dateStr);
@@ -724,10 +901,7 @@ export default function App() {
                 }
 
                 if (entry.isTomorrow) {
-                  const tmr = new Date();
-                  tmr.setDate(tmr.getDate() + 1);
-                  const tomorrowStr = tmr.toISOString().split('T')[0];
-                  if (selectedDate.toISOString().split('T')[0] === tomorrowStr) {
+                  if (localDateStr(selectedDate) === localDateStr(tmrDate)) {
                     setDailyLog(prev => [newEntry, ...prev]);
                   }
                   addNotification('success', `Añadido para MAÑANA: ${entry.name} 📅`);
@@ -750,7 +924,7 @@ export default function App() {
                 }
               }}
               onRemoveLogEntry={async (itemName) => {
-                const dateStr = selectedDate.toISOString().split('T')[0];
+                const dateStr = localDateStr(selectedDate);
                 setDailyLog(prev => {
                   const index = prev.findIndex(item => item.name.toLowerCase().includes(itemName.toLowerCase()));
                   if (index > -1) {
@@ -768,7 +942,7 @@ export default function App() {
               }}
               onRemoveShoppingItem={handleDeleteShoppingItemByName}
               onClearDailyLog={async () => {
-                const dateStr = selectedDate.toISOString().split('T')[0];
+                const dateStr = localDateStr(selectedDate);
                 try {
                   await clearDailyLog(dateStr);
                   setDailyLog([]);
@@ -778,13 +952,7 @@ export default function App() {
                   addNotification('error', `Error al vaciar el diario`);
                 }
               }}
-              onClearShoppingList={async () => {
-                setShoppingList([]);
-                try {
-                  await clearShoppingList();
-                  addNotification('success', `Lista de la compra vaciada 🧹`);
-                } catch (e) { console.error('Error clearing shopping list:', e); }
-              }}
+              onClearShoppingList={handleClearShoppingList}
             />
           );
         case 'premium':

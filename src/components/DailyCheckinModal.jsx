@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function DailyCheckinModal({ onSubmit, onClose }) {
+export default function DailyCheckinModal({ onSubmit }) {
     const [mood, setMood] = useState('');
     const [energy, setEnergy] = useState(5);
     const [sleep, setSleep] = useState(7);

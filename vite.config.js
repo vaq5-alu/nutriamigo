@@ -7,16 +7,20 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true, // Falla si el puerto está ocupado, no salta a otro
-    proxy: {
-      '/login': 'http://localhost:8000',
-      '/register': 'http://localhost:8000',
-      '/profile': 'http://localhost:8000',
-      '/daily': 'http://localhost:8000',
-      '/shopping': 'http://localhost:8000',
-      '/weight': 'http://localhost:8000',
-      '/chat': 'http://localhost:8000',
-      '/ai': 'http://localhost:8000',
-      '/admin': 'http://localhost:8000',
-    }
-  }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // Separar las librerías pesadas en chunks propios: mejor cacheo
+        // del navegador y carga inicial más ligera
+        manualChunks: {
+          react: ['react', 'react-dom'],
+          firebase: ['firebase/app', 'firebase/auth'],
+          charts: ['recharts'],
+          scanner: ['html5-qrcode'],
+          markdown: ['react-markdown', 'remark-gfm'],
+        },
+      },
+    },
+  },
 })

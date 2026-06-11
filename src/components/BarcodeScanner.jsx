@@ -1,45 +1,73 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
+import React, { useEffect, useState } from 'react';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
 export default function BarcodeScanner({ onScanSuccess, onScanFailure }) {
-    const scannerRef = useRef(null);
     const [hasError, setHasError] = useState(false);
 
     useEffect(() => {
+        let isMounted = true;
         const html5QrCode = new Html5Qrcode("reader");
-        scannerRef.current = html5QrCode;
 
-        // Utilizamos cámara trasera preferentemente, con caja rectangular ideal para códigos de barras 1D
+        // Configuramos la cámara para leer mejor códigos de barras
         const config = { 
             fps: 10, 
-            qrbox: { width: 300, height: 150 },
-            aspectRatio: 1.0,
-            disableFlip: false
+            qrbox: { width: 250, height: 150 },
+            disableFlip: false,
+            formatsToSupport: [ 
+                Html5QrcodeSupportedFormats.EAN_13, 
+                Html5QrcodeSupportedFormats.EAN_8, 
+                Html5QrcodeSupportedFormats.UPC_A,
+                Html5QrcodeSupportedFormats.UPC_E,
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.CODE_39
+            ]
         };
         
         html5QrCode.start(
             { facingMode: "environment" }, 
             config, 
             (decodedText, decodedResult) => {
-                // Detener escáner tras éxito
-                if (scannerRef.current) {
-                    scannerRef.current.stop().then(() => {
+                if (isMounted) {
+                    html5QrCode.stop().then(() => {
                         onScanSuccess(decodedText, decodedResult);
                     }).catch(err => console.error("Error parando escáner:", err));
                 }
             },
-            (errorMessage) => {
-                // Se llama en cada frame que no reconoce nada, se ignora
+            () => {
+                // Ignorar errores por frame sin leer nada
             }
-        ).catch((err) => {
-            console.error("No se pudo iniciar la cámara trasera:", err);
-            setHasError(true);
-            if (onScanFailure) onScanFailure(err);
+        ).then(() => {
+            if (!isMounted) {
+                // Si React desmontó el componente mientras la cámara se iniciaba, forzamos parar.
+                html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+            }
+        }).catch((err) => {
+            if (isMounted) {
+                console.error("No se pudo iniciar la cámara trasera:", err);
+                setHasError(true);
+                if (onScanFailure) onScanFailure(err);
+            }
         });
 
+        // Limpieza robusta para evitar cámaras duplicadas (especialmente en React Strict Mode)
         return () => {
-            if (scannerRef.current && scannerRef.current.isScanning) {
-                scannerRef.current.stop().catch(err => console.error("Error limpiando:", err));
+            isMounted = false;
+            try {
+                if (html5QrCode.isScanning) {
+                    html5QrCode.stop()
+                        .then(() => html5QrCode.clear())
+                        .catch(err => console.error("Error limpiando cámara al desmontar:", err));
+                } else {
+                    html5QrCode.clear();
+                }
+            } catch (error) {
+                console.error("Error síncrono al limpiar:", error);
+            }
+            
+            // Limpiamos el DOM manualmente si la librería se atasca
+            const readerElement = document.getElementById("reader");
+            if (readerElement) {
+                readerElement.innerHTML = ''; 
             }
         };
     }, [onScanSuccess, onScanFailure]);

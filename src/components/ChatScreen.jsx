@@ -133,6 +133,8 @@ export default function ChatScreen({ user, profileData, dailyLog, shoppingList, 
             
             if (error?.message?.includes("429") || error?.message?.toLowerCase().includes("quota")) {
                 errorText = "¡Uy! Parece que tu clave de Google Gemini ha agotado su saldo o de peticiones límite (Quota Exceeded). 🥲 Revisa tu cuenta de Google Cloud.";
+            } else if (error?.message) {
+                errorText = error.message;
             }
 
             const errorMsg = { id: Date.now() + 1, text: errorText, sender: 'ai', isError: true };
@@ -184,12 +186,12 @@ export default function ChatScreen({ user, profileData, dailyLog, shoppingList, 
                                 <ReactMarkdown
                                     remarkPlugins={[remarkGfm]}
                                     components={{
-                                        ul: ({ node, ...props }) => <ul className="list-disc pl-5 my-3 space-y-1 opacity-95" {...props} />,
-                                        ol: ({ node, ...props }) => <ol className="list-decimal pl-5 my-3 space-y-1 opacity-95" {...props} />,
-                                        li: ({ node, ...props }) => <li className="my-1" {...props} />,
-                                        p: ({ node, ...props }) => <p className="mb-3 last:mb-0" {...props} />,
-                                        strong: ({ node, ...props }) => <strong className="font-bold text-emerald-950" {...props} />,
-                                        h3: ({ node, ...props }) => <h3 className="font-bold text-lg mt-4 mb-2 text-emerald-900 border-l-4 border-emerald-500 pl-3" {...props} />,
+                                        ul: ({ ...props }) => <ul className="list-disc pl-5 my-3 space-y-1 opacity-95" {...props} />,
+                                        ol: ({ ...props }) => <ol className="list-decimal pl-5 my-3 space-y-1 opacity-95" {...props} />,
+                                        li: ({ ...props }) => <li className="my-1" {...props} />,
+                                        p: ({ ...props }) => <p className="mb-3 last:mb-0" {...props} />,
+                                        strong: ({ ...props }) => <strong className="font-bold text-emerald-950" {...props} />,
+                                        h3: ({ ...props }) => <h3 className="font-bold text-lg mt-4 mb-2 text-emerald-900 border-l-4 border-emerald-500 pl-3" {...props} />,
                                     }}
                                 >
                                     {msg.text}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { recipes } from '../data/recipeDatabase.js';
 import { generateSmartMenu } from '../services/geminiService.js';
 
@@ -12,7 +12,12 @@ function RecipeCard({ recipe, onAddRecipeToLog, mealType, onAddIngredients, isAI
             <h3 className={`text-lg font-bold ${isAI ? 'text-purple-800' : 'text-emerald-800'}`}>{recipe.name}</h3>
             {isAI && <span className="text-xs bg-purple-200 text-purple-800 px-2 py-0.5 rounded-full">✨ IA</span>}
           </div>
-          <p className="text-sm text-gray-600">Calorías: {recipe.calories} kcal</p>
+          <p className="text-sm text-gray-600">
+            Calorías: {recipe.calories} kcal
+            {(recipe.protein !== undefined || recipe.carbs !== undefined || recipe.fat !== undefined) && (
+              <span> • P: {recipe.protein || 0}g C: {recipe.carbs || 0}g G: {recipe.fat || 0}g</span>
+            )}
+          </p>
           {recipe.reason && <p className="text-xs text-gray-500 mt-1 italic">"{recipe.reason}"</p>}
         </div>
 
@@ -55,16 +60,38 @@ function RecipeCard({ recipe, onAddRecipeToLog, mealType, onAddIngredients, isAI
   );
 }
 
-export default function MenuGeneratorScreen({ profileData, checkinData, onAddRecipeToLog, onAddIngredients }) {
+export default function MenuGeneratorScreen({ profileData, checkinData, onAddRecipeToLog, onAddIngredients, addNotification }) {
   const [mealType, setMealType] = useState('comida');
-  const [suggestedRecipes, setSuggestedRecipes] = useState([]);
-  const [isAiMode, setIsAiMode] = useState(false);
+  const [localSuggestedRecipes, setLocalSuggestedRecipes] = useState([]);
+  const [aiSuggestedRecipes, setAiSuggestedRecipes] = useState(() => {
+    const saved = localStorage.getItem('nutricoach_ai_suggested_recipes');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [isAiMode, setIsAiMode] = useState(() => {
+    const saved = localStorage.getItem('nutricoach_ai_mode');
+    return saved ? JSON.parse(saved) : false;
+  });
   const [loading, setLoading] = useState(false);
-  const [customPrompt, setCustomPrompt] = useState("");
+  const [customPrompt, setCustomPrompt] = useState(() => {
+    return localStorage.getItem('nutricoach_custom_prompt') || "";
+  });
+
+  useEffect(() => {
+    localStorage.setItem('nutricoach_ai_suggested_recipes', JSON.stringify(aiSuggestedRecipes));
+  }, [aiSuggestedRecipes]);
+
+  useEffect(() => {
+    localStorage.setItem('nutricoach_ai_mode', JSON.stringify(isAiMode));
+  }, [isAiMode]);
+
+  useEffect(() => {
+    localStorage.setItem('nutricoach_custom_prompt', customPrompt);
+  }, [customPrompt]);
+
+  const displayedRecipes = isAiMode ? aiSuggestedRecipes : localSuggestedRecipes;
 
   // --- Modo Local (Filtro) ---
   const handleGenerateLocal = () => {
-    const userGoal = profileData.goal;
     const userIntolerances = profileData.intolerances || [];
 
     const results = recipes.filter(recipe => {
@@ -79,36 +106,44 @@ export default function MenuGeneratorScreen({ profileData, checkinData, onAddRec
       return mealTypeMatch && isSafe;
     });
 
-    // Optional: Sort by goal relevance?
-    setSuggestedRecipes(results);
+    setLocalSuggestedRecipes(results);
   };
 
   // --- Modo IA (Gemini) ---
   const handleGenerateAI = async () => {
     setLoading(true);
-    setSuggestedRecipes([]);
+    setAiSuggestedRecipes([]);
     try {
       const aiMenu = await generateSmartMenu(profileData, checkinData, customPrompt);
-      setSuggestedRecipes(aiMenu);
-    } catch (error) {
+      setAiSuggestedRecipes(aiMenu);
+    } catch {
       alert("Error al conectar con el Chef NutriIA. Inténtalo de nuevo.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddAllToDiary = () => {
-    suggestedRecipes.forEach(recipe => {
-      onAddRecipeToLog(recipe, recipe.mealType);
-    });
-    alert("¡Menú completo añadido al diario!");
+  const handleClearGeneration = () => {
+    if (window.confirm("¿Seguro que quieres borrar el plan generado?")) {
+      setAiSuggestedRecipes([]);
+      setCustomPrompt("");
+    }
   };
 
-  const handleAddAllToShopping = () => {
-    suggestedRecipes.forEach(recipe => {
-      onAddIngredients(recipe.shoppingList || recipe.ingredients); // Use optimized shopping list if available
-    });
-    alert("¡Ingredientes añadidos a la lista de compra!");
+  const handleAddAllToDiary = async () => {
+    for (const recipe of displayedRecipes) {
+      await onAddRecipeToLog(recipe, recipe.mealType, true);
+    }
+    if (addNotification) {
+      addNotification('success', '¡Menú completo añadido al diario! 📅');
+    }
+  };
+
+  const handleAddAllToShopping = async () => {
+    await onAddIngredients(displayedRecipes, true);
+    if (addNotification) {
+      addNotification('success', '¡Ingredientes de todo el menú añadidos a la lista de compra! 🛒');
+    }
   };
 
   return (
@@ -119,13 +154,13 @@ export default function MenuGeneratorScreen({ profileData, checkinData, onAddRec
         {/* Toggle IA */}
         <div className="flex items-center bg-gray-100 rounded-lg p-1">
           <button
-            onClick={() => { setIsAiMode(false); setSuggestedRecipes([]); }}
+            onClick={() => { setIsAiMode(false); }}
             className={`px-4 py-2 rounded-md text-sm font-medium transition ${!isAiMode ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Local
           </button>
           <button
-            onClick={() => { setIsAiMode(true); setSuggestedRecipes([]); }}
+            onClick={() => { setIsAiMode(true); }}
             className={`px-4 py-2 rounded-md text-sm font-medium transition flex items-center gap-1 ${isAiMode ? 'bg-purple-600 shadow text-white' : 'text-gray-500 hover:text-gray-700'}`}
           >
             <span>✨</span> IA
@@ -189,20 +224,23 @@ export default function MenuGeneratorScreen({ profileData, checkinData, onAddRec
           </div>
         )}
 
-        {!loading && suggestedRecipes.length === 0 && (
+        {!loading && displayedRecipes.length === 0 && (
           <p className="text-gray-500 text-center py-8">
             {isAiMode ? 'Dile al Chef qué te apetece o déjalo en blanco para una sorpresa.' : 'Pulsa "Sugerir" para ver recetas.'}
           </p>
         )}
 
         {/* Bulk Actions for AI Menu */}
-        {!loading && suggestedRecipes.length > 0 && isAiMode && (
+        {!loading && displayedRecipes.length > 0 && isAiMode && (
           <div className="flex flex-col sm:flex-row gap-3 mb-6 p-4 bg-purple-50 rounded-xl border border-purple-100">
             <div className="flex-1">
               <h4 className="font-bold text-purple-900">Plan Propuesto</h4>
               <p className="text-sm text-purple-700">¿Te gusta este menú?</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <button onClick={handleClearGeneration} className="px-4 py-2 bg-red-50 border border-red-200 text-red-600 rounded-lg hover:bg-red-100 text-sm font-medium">
+                🗑️ Borrar Plan
+              </button>
               <button onClick={handleAddAllToShopping} className="px-4 py-2 bg-white border border-purple-200 text-purple-700 rounded-lg hover:bg-purple-100 text-sm font-medium">
                 + Lista Compra
               </button>
@@ -213,7 +251,7 @@ export default function MenuGeneratorScreen({ profileData, checkinData, onAddRec
           </div>
         )}
 
-        {suggestedRecipes.map((recipe, index) => (
+        {displayedRecipes.map((recipe, index) => (
           <RecipeCard
             key={recipe.id || index}
             recipe={recipe}

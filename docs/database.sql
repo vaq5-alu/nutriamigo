@@ -76,5 +76,6 @@ CREATE TABLE IF NOT EXISTS weight_history (
     user_id VARCHAR(128) NOT NULL,
     date DATE NOT NULL,
     weight DECIMAL(5,2) NOT NULL,
+    UNIQUE KEY user_date_weight (user_id, date),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );

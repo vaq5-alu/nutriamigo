@@ -35,6 +35,7 @@ const Icons = {
 export default function Layout({ children, currentView, setCurrentView, onLogout, user, isProfileComplete = true, isPremium = null }) {
     
     // Función auxiliar para los botones de navegación (iOS Tab Bar)
+    // eslint-disable-next-line no-unused-vars -- Icon sí se usa en el JSX
     const TabItem = ({ view, label, icon: Icon }) => {
         const active = currentView === view;
         const isDisabled = !isProfileComplete && view !== 'profile';
@@ -43,7 +44,7 @@ export default function Layout({ children, currentView, setCurrentView, onLogout
             <button
                 onClick={() => {
                     if (isDisabled) return;
-                    if (view === 'chat' && isPremium === false) {
+                    if (view === 'chat' && !isPremium) {
                         setCurrentView('premium');
                     } else {
                         setCurrentView(view);
@@ -67,6 +68,7 @@ export default function Layout({ children, currentView, setCurrentView, onLogout
         );
     };
 
+    // eslint-disable-next-line no-unused-vars -- Icon sí se usa en el JSX
     const SidebarItem = ({ view, label, icon: Icon }) => {
         const active = currentView === view;
         const isDisabled = !isProfileComplete && view !== 'profile';
@@ -75,7 +77,7 @@ export default function Layout({ children, currentView, setCurrentView, onLogout
             <button
                 onClick={() => {
                     if (isDisabled) return;
-                    if (view === 'chat' && isPremium === false) {
+                    if (view === 'chat' && !isPremium) {
                         setCurrentView('premium');
                     } else {
                         setCurrentView(view);
@@ -95,7 +97,7 @@ export default function Layout({ children, currentView, setCurrentView, onLogout
     };
 
     return (
-        <div className="min-h-screen bg-[#f9fafb] flex flex-col md:flex-row pb-20 md:pb-0">
+        <div className="h-screen bg-[#f9fafb] flex flex-col md:flex-row overflow-hidden pb-20 md:pb-0">
             
             {/* --- SIDEBAR (Desktop Only) --- */}
             <aside className="hidden md:flex flex-col w-64 bg-white border-r border-gray-100 fixed inset-y-0 h-full">
@@ -150,7 +152,7 @@ export default function Layout({ children, currentView, setCurrentView, onLogout
             </header>
             
             {/* --- MAIN CONTENT --- */}
-            <main className="flex-1 md:ml-64 p-4 md:p-12">
+            <main className="flex-1 md:ml-64 p-4 md:p-6 overflow-y-auto">
                 <div className="max-w-4xl mx-auto view-transition">
                     {/* --- BLOQUEO DE PERFIL (Setup Panel) --- */}
                     {!isProfileComplete && (

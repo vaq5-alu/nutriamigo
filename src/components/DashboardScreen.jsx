@@ -37,7 +37,7 @@ const Icons = {
   )
 };
 
-export default function DashboardScreen({ profileData, dailyLog, weightHistory, isPremium, premiumUntil, streak, onGoToProfile }) {
+export default function DashboardScreen({ profileData, dailyLog, isPremium, streak, onGoToProfile }) {
   if (!profileData) {
     return (
       <div className="text-center py-20">
@@ -53,13 +53,13 @@ export default function DashboardScreen({ profileData, dailyLog, weightHistory, 
     );
   }
 
-  const dailyCalories = profileData.daily_calories || 2000;
+  const dailyCalories = profileData.calories || 2000;
   const consumedCalories = dailyLog ? dailyLog.reduce((total, entry) => total + (parseInt(entry.calories) || 0), 0) : 0;
   const progress = Math.min((consumedCalories / dailyCalories) * 100, 100);
   const streakValue = streak || 0;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex justify-between items-end">
         <div>

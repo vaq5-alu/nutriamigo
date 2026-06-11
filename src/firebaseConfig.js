@@ -13,22 +13,6 @@ import {
   reauthenticateWithCredential
 } from "firebase/auth";
 
-import {
-  getFirestore,
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  collection,
-  getDocs,
-  addDoc,
-  deleteDoc,
-  query,
-  orderBy,
-  serverTimestamp
-} from "firebase/firestore";
-
-
 const firebaseConfig = {
   apiKey: "AIzaSyCdN-5MksNyYVVDY_9lGAJ5KtCKzmb30lk",
   authDomain: "nutriamigo-fd9f9.firebaseapp.com",
@@ -41,12 +25,10 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
 
 export {
   app,
   auth,
-  db,
 
   // Auth functions
   onAuthStateChanged,
@@ -57,18 +39,5 @@ export {
   signOut,
   deleteUser,
   EmailAuthProvider,
-  reauthenticateWithCredential,
-
-  // Firestore functions
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  collection,
-  getDocs,
-  addDoc,
-  deleteDoc,
-  query,
-  orderBy,
-  serverTimestamp
+  reauthenticateWithCredential
 };

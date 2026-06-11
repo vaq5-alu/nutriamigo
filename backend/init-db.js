@@ -77,6 +77,7 @@ async function initDB() {
                 user_id VARCHAR(128) NOT NULL,
                 date DATE NOT NULL,
                 weight DECIMAL(5,2) NOT NULL,
+                UNIQUE KEY unique_user_date (user_id, date),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )`
         ];
